@@ -1,6 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import SystemMonitor from './SystemMonitor';
 import './App.css';
 
 function App() {
@@ -97,8 +96,7 @@ function App() {
 
   return (
     <div className="App">
-      <SystemMonitor />
-      <div className="chat-container">
+        <div className="chat-container">
         <div className="message-list">
           {messages.map(renderMessage)}
           {isLoading && <div className="message ai-message typing-indicator"><span></span><span></span><span></span></div>}
