@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+ï»¿import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import SystemMonitor from './SystemMonitor';
 import './App.css';
@@ -9,9 +9,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // ±qÀô¹ÒÅÜ¼ÆÅª¨ú«áºİ API ªººô§}
-  // ¦b¥»¦a¶}µo®É¡A¥¦·|¬O http://localhost:8000
-  // ¦b³¡¸p¨ì Vercel «á¡A¥¦·|¦Û°ÊÅÜ¦¨±z¦b Render ¤Wªº«áºİºô§}
+  // å¾ç’°å¢ƒè®Šæ•¸è®€å–å¾Œç«¯ API çš„ç¶²å€
+  // åœ¨æœ¬åœ°é–‹ç™¼æ™‚ï¼Œå®ƒæœƒæ˜¯ http://localhost:8000
+  // åœ¨éƒ¨ç½²åˆ° Vercel å¾Œï¼Œå®ƒæœƒè‡ªå‹•è®Šæˆæ‚¨åœ¨ Render ä¸Šçš„å¾Œç«¯ç¶²å€
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 
@@ -37,8 +37,8 @@ function App() {
         .map(m => `${m.sender}: ${m.text}`)
         .join('\n');
 
-      // *** ­×¥¿ÂI ***
-      // ¨Ï¥Î API_URL ÅÜ¼Æ¨Ó²Õ¦X§¹¾ãªº½Ğ¨Dºô§}
+      // *** ä¿®æ­£é» ***
+      // ä½¿ç”¨ API_URL è®Šæ•¸ä¾†çµ„åˆå®Œæ•´çš„è«‹æ±‚ç¶²å€
       const res = await axios.post(`${API_URL}/api/backtest`, { 
         strategy: full_strategy_context
       });
@@ -49,7 +49,7 @@ function App() {
         setMessages(prev => [...prev, { sender: 'ai', data: res.data, type: 'result' }]);
       }
     } catch (err) {
-      const errorMessage = err.response ? err.response.data.detail : 'µLªk³s±µ¨ì«áºİ¦øªA¾¹¡C';
+      const errorMessage = err.response ? err.response.data.detail : 'ç„¡æ³•é€£æ¥åˆ°å¾Œç«¯ä¼ºæœå™¨ã€‚';
       setMessages(prev => [...prev, { sender: 'ai', text: errorMessage, type: 'error' }]);
     }
 
@@ -70,14 +70,14 @@ function App() {
     }
 
     if (msg.type === 'error') {
-      return <div key={index} className="message ai-message error-message"><strong>¿ù»~:</strong> {msg.text}</div>;
+      return <div key={index} className="message ai-message error-message"><strong>éŒ¯èª¤:</strong> {msg.text}</div>;
     }
 
     if (msg.type === 'result' && msg.data) {
       const { stats, tickers } = msg.data;
       return (
         <div key={index} className="message ai-message result-message">
-          <h3>¦^´úµ²ªG for {tickers.join(', ')}</h3>
+          <h3>å›æ¸¬çµæœ for {tickers.join(', ')}</h3>
           <div className="results-grid">
             {Object.entries(stats).map(([key, value]) => {
               if (['_strategy', '_equity_curve', '_trades'].includes(key)) return null;
@@ -109,10 +109,10 @@ function App() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="½Ğ´y­z±zªº¥æ©öµ¦²¤..."
+            placeholder="è«‹æè¿°æ‚¨çš„äº¤æ˜“ç­–ç•¥..."
             disabled={isLoading}
           />
-          <button type="submit" disabled={isLoading}>¶Ç°e</button>
+          <button type="submit" disabled={isLoading}>å‚³é€</button>
         </form>
       </div>
     </div>

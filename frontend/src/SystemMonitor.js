@@ -1,51 +1,51 @@
-import React, { useState, useEffect } from 'react';
+ï»¿import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const SystemMonitor = () => {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
 
-  // ±qÀô¹ÒÅÜ¼ÆÅª¨ú«áºİ API ªººô§}
+  // å¾ç’°å¢ƒè®Šæ•¸è®€å–å¾Œç«¯ API çš„ç¶²å€
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // *** ­×¥¿ÂI ***
-        // ¨Ï¥Î API_URL ÅÜ¼Æ¨Ó²Õ¦X§¹¾ãªº½Ğ¨Dºô§}
+        // *** ä¿®æ­£é» ***
+        // ä½¿ç”¨ API_URL è®Šæ•¸ä¾†çµ„åˆå®Œæ•´çš„è«‹æ±‚ç¶²å€
         const res = await axios.get(`${API_URL}/api/system_stats`);
         setStats(res.data);
         setError('');
       } catch (err) {
-        setError('µLªkÀò¨ú¨t²Îª¬ºA¡C');
+        setError('ç„¡æ³•ç²å–ç³»çµ±ç‹€æ…‹ã€‚');
         console.error(err);
       }
     };
 
-    const intervalId = setInterval(fetchStats, 5000); // ¨C 5 ¬íÀò¨ú¤@¦¸ª¬ºA
+    const intervalId = setInterval(fetchStats, 5000); // æ¯ 5 ç§’ç²å–ä¸€æ¬¡ç‹€æ…‹
 
-    return () => clearInterval(intervalId); // ²Õ¥ó¨ø¸ü®É²M°£©w®É¾¹
-  }, [API_URL]); // ±N API_URL ¥[¤J¨Ì¿à¶µ
+    return () => clearInterval(intervalId); // çµ„ä»¶å¸è¼‰æ™‚æ¸…é™¤å®šæ™‚å™¨
+  }, [API_URL]); // å°‡ API_URL åŠ å…¥ä¾è³´é …
 
   if (error) {
     return <div className="system-monitor error">{error}</div>;
   }
 
   if (!stats) {
-    return <div className="system-monitor">¥¿¦b¸ü¤J¨t²Îª¬ºA...</div>;
+    return <div className="system-monitor">æ­£åœ¨è¼‰å…¥ç³»çµ±ç‹€æ…‹...</div>;
   }
 
   return (
     <div className="system-monitor">
       <div className="stat-item">CPU: <span>{stats.cpu_usage}</span></div>
-      <div className="stat-item">°O¾ĞÅé: <span>{stats.memory_usage}</span></div>
+      <div className="stat-item">è¨˜æ†¶é«”: <span>{stats.memory_usage}</span></div>
       {stats.gpus && stats.gpus.map(gpu => (
         <div key={gpu.id} className="gpu-stat-item">
           <div className="stat-item">GPU {gpu.id} ({gpu.name}): <span>{gpu.load}</span></div>
-          <div className="stat-item">GPU °O¾ĞÅé: <span>{gpu.memoryUtil} ({gpu.memoryUsed}/{gpu.memoryTotal})</span></div>
+          <div className="stat-item">GPU è¨˜æ†¶é«”: <span>{gpu.memoryUtil} ({gpu.memoryUsed}/{gpu.memoryTotal})</span></div>
         </div>
       ))}
-      {stats.gpus && stats.gpus.length === 0 && <div className="stat-item">¥¼°»´ú¨ì GPU¡C</div>}
+      {stats.gpus && stats.gpus.length === 0 && <div className="stat-item">æœªåµæ¸¬åˆ° GPUã€‚</div>}
     </div>
   );
 };
