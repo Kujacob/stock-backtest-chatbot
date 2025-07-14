@@ -5,5 +5,3 @@ google-generativeai
 yfinance
 backtesting
 pandas
-psutil
-GPUtil

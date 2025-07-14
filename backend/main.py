@@ -6,8 +6,6 @@ from datetime import timedelta
 import pandas as pd
 import yfinance as yf
 import google.generativeai as genai
-import psutil
-import GPUtil
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -332,32 +330,6 @@ def run_backtest(data: pd.DataFrame, strategy_code: str) -> dict:
 @app.get("/")
 def read_root():
     return {"message": "歡迎使用自然語言股票策略回測 API"}
-
-@app.get("/api/system_stats")
-def get_system_stats():
-    """回傳當前系統和 GPU 的狀態"""
-    try:
-        gpus = GPUtil.getGPUs()
-        gpu_stats = []
-        for gpu in gpus:
-            gpu_stats.append({
-                "id": gpu.id,
-                "name": gpu.name,
-                "load": f"{gpu.load*100:.2f}%",
-                "memoryUtil": f"{gpu.memoryUtil*100:.2f}%",
-                "memoryTotal": f"{gpu.memoryTotal}MB",
-                "memoryUsed": f"{gpu.memoryUsed}MB",
-                "memoryFree": f"{gpu.memoryFree}MB",
-            })
-        
-        return {
-            "cpu_usage": f"{psutil.cpu_percent()}%",
-            "memory_usage": f"{psutil.virtual_memory().percent}%",
-            "gpus": gpu_stats
-        }
-    except Exception as e:
-        return {"error": f"無法獲取系統狀態: {str(e)}"}
-
 
 @app.post("/api/backtest", response_model=BacktestResponse, responses={202: {"model": QuestionResponse}})
 async def perform_backtest(request: StrategyRequest):
