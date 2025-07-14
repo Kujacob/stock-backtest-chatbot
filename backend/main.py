@@ -25,7 +25,7 @@ load_dotenv()
 app = FastAPI(
     title="自然語言股票策略回測 API",
     description="一個能將自然語言交易策略轉換為程式碼並執行回測的 API。",
-    version="9.2.0", # Final Bugfix Version
+    version="10.0.0", # Final Deployment Version
 )
 
 # 設定 CORS 中介軟體
@@ -74,6 +74,9 @@ def get_llm_prompt(user_strategy: str) -> str:
 You are an expert financial analyst and Python programmer. Your task is to interpret a user's trading strategy and convert it into a structured JSON object. You must support multiple strategy types.
 
 **CRITICAL RULE:** If the strategy is ambiguous or uses features beyond what is described, you MUST return a JSON object with a "question" key asking for clarification.
+
+**--- *** TICKER SYMBOL RULE *** ---**
+**Ticker Symbol Rule:** You MUST use the '^' prefix for indices. For example, if the user mentions 'VIX', you must convert it to '^VIX'. If they mention 'Nasdaq 100', convert it to '^NDX'.
 
 **--- STRATEGY TYPE 1: ADVANCED_PYRAMID_TRADE ---**
 *Description*: A sophisticated strategy that involves an initial buy, a series of subsequent "pyramiding" buys based on price drops, and a profit-target based sell condition.
@@ -145,8 +148,8 @@ def fetch_and_prepare_data(tickers: list[str], start_date: str, end_date: str) -
     print(f"正在下載 {tickers} 從 {start_date} 到 {end_date} 的資料...")
     try:
         all_data = yf.download(tickers, start=start_date, end=end_date, progress=False, auto_adjust=True)
-        if all_data.empty:
-            raise ValueError(f"找不到股票代碼 {tickers} 在指定日期範圍內的資料。")
+        if all_data.empty or all_data['Close'].isnull().all().all():
+             raise ValueError(f"找不到股票代碼 {tickers} 在指定日期範圍內的有效資料。")
 
         primary_ticker = tickers[0]
         data = pd.DataFrame(index=all_data.index)
@@ -189,40 +192,44 @@ def generate_strategy_code(strategy_definition: dict) -> str:
     ]
     
     # 動態加入指標計算與參數設定
-    if strategy_type == 'ADVANCED_PYRAMID_TRADE':
+    if buy_rules:
         buy_rule_params = buy_rules[0]['params']
-        if buy_rule_params.get('trigger_type') == 'CONTRARIAN_INDICATOR':
-            ma_period = buy_rule_params['ma_period']
-            indicator_ticker_clean = buy_rule_params['indicator_ticker'].replace('^', '').replace('=F', '')
-            indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
-            sma_name = f"self.sma_{indicator_ticker_clean}"
-            init_code_lines.append(f"        {sma_name} = self.I(SMA, {indicator_data_series}, {ma_period})")
-    elif strategy_type == 'DCA_AND_HOLD':
-        buy_rule_params = buy_rules[0]['params']
-        init_code_lines.append(f"        self.investment_interval = {buy_rule_params['investment_interval_days']}")
-        init_code_lines.append(f"        self.investment_amount = {buy_rule_params['investment_amount_usd']}")
+        if buy_rules[0]['type'] == 'ADVANCED_PYRAMID_TRADE':
+            if buy_rule_params.get('trigger_type') == 'CONTRARIAN_INDICATOR':
+                ma_period = buy_rule_params['ma_period']
+                indicator_ticker_clean = buy_rule_params['indicator_ticker'].replace('^', '').replace('=F', '')
+                indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
+                sma_name = f"self.sma_{indicator_ticker_clean}"
+                init_code_lines.append(f"        {sma_name} = self.I(SMA, {indicator_data_series}, {ma_period})")
+        elif buy_rules[0]['type'] == 'DCA_AND_HOLD':
+            init_code_lines.append(f"        self.investment_interval = {buy_rule_params['investment_interval_days']}")
+            init_code_lines.append(f"        self.investment_amount = {buy_rule_params['investment_amount_usd']}")
 
-    # --- *** 最終修正點 *** ---
-    # 根據策略類型產生不同的 next 方法邏輯
-    next_code_lines = []
+    # 初始化所有邏輯列表
+    buy_logic_lines = []
+    pyramid_logic = []
+    sell_logic_lines = []
+
+    # 產生買入邏輯
     if strategy_type == 'ADVANCED_PYRAMID_TRADE':
-        # --- 金字塔策略邏輯 ---
         params = buy_rules[0]['params']
         pyramid_rules = params.get('pyramid_rules', [])
+        
         indicator_ticker_clean = params['indicator_ticker'].replace('^', '').replace('=F', '')
         indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
         sma_name = f"self.sma_{indicator_ticker_clean}"
         initial_size_pct = params['initial_size_pct']
         
-        buy_logic = [
+        buy_logic_lines.extend([
             f"if crossover({sma_name}, {indicator_data_series}):",
             f"    trade_value = self.equity * {initial_size_pct} / 100",
             f"    size = int(trade_value / self.data.Close[-1])",
             f"    if size > 0:",
             f"        self.buy(size=size)",
             f"        self.last_buy_price = self.data.Close[-1]",
-        ]
-        pyramid_logic = [
+        ])
+
+        pyramid_logic.extend([
             f"if self.pyramid_count < {len(pyramid_rules)}:",
             f"    pyramid_rule = {json.dumps(pyramid_rules)}[self.pyramid_count]",
             f"    if self.data.Close[-1] < self.last_buy_price * (1 - pyramid_rule['drop_pct'] / 100):",
@@ -232,45 +239,45 @@ def generate_strategy_code(strategy_definition: dict) -> str:
             f"            self.buy(size=add_size)",
             f"            self.last_buy_price = self.data.Close[-1]",
             f"            self.pyramid_count += 1",
-        ]
-        sell_logic = []
-        if sell_rules and sell_rules[0]['type'] == 'TAKE_PROFIT':
-            sell_params = sell_rules[0]['params']
-            return_pct = sell_params['return_pct']
-            sell_logic.extend([
+        ])
+    elif strategy_type == 'DCA_AND_HOLD':
+        buy_logic_lines.extend([
+            "if self.last_investment_date == -1 or (len(self.data) - 1 - self.last_investment_date) >= self.investment_interval:",
+            "    size = int(self.investment_amount / self.data.Close[-1])",
+            "    if self.equity >= self.investment_amount and size > 0:",
+            "        self.buy(size=size)",
+            "        self.last_investment_date = len(self.data) - 1",
+        ])
+
+    if not buy_logic_lines:
+        buy_logic_lines.append("pass")
+
+    # 產生賣出邏輯
+    if sell_rules:
+        if sell_rules[0]['type'] == 'TAKE_PROFIT':
+            params = sell_rules[0]['params']
+            return_pct = params['return_pct']
+            sell_logic_lines.extend([
                 f"if self.position.pl_pct * 100 > {return_pct}:",
                 f"    self.position.close()",
                 f"    self.pyramid_count = 0",
                 f"    self.last_buy_price = 0",
             ])
-        
-        next_code_lines.extend([
-            "        if not self.position:",
-            *[f"            {line}" for line in buy_logic],
-            "        else:",
-            *[f"            {line}" for line in pyramid_logic],
-            *[f"            {line}" for line in sell_logic],
-        ])
+    
+    if not sell_logic_lines:
+        sell_logic_lines.append("pass")
 
-    elif strategy_type == 'DCA_AND_HOLD':
-        # --- 定期定額策略邏輯 ---
-        next_code_lines.extend([
-            "        # 定期定額買入邏輯，不論是否已有倉位",
-            "        if self.last_investment_date == -1 or (len(self.data) - 1 - self.last_investment_date) >= self.investment_interval:",
-            "            # 計算可以購買的整數股數",
-            "            size = int(self.investment_amount / self.data.Close[-1])",
-            "            if self.equity >= self.investment_amount and size > 0:",
-            "                self.buy(size=size)",
-            "                self.last_investment_date = len(self.data) - 1",
-        ])
-
-    # 在所有策略的結尾都加上未實現損益的計算
-    next_code_lines.extend([
+    # 組合完整的 next 方法
+    next_code_lines = [
+        "        if not self.position:",
+        *[f"            {line}" for line in buy_logic_lines],
+        "        else:",
+        *[f"            {line}" for line in pyramid_logic],
+        *[f"            {line}" for line in sell_logic_lines],
         "",
-        "        # 在回測的最後一天，如果仍有持倉，則記錄下未實現損益",
         "        if self.data.index[-1] == self.data.index.values[-1] and self.position:",
         "            self.unrealized_pl = self.position.pl_pct * 100",
-    ])
+    ]
 
     init_body = "\n".join(init_code_lines)
     next_body = "\n".join(next_code_lines)
@@ -361,6 +368,8 @@ async def perform_backtest(request: StrategyRequest):
             stats=stats
         )
 
+    except HTTPException as e:
+        raise e
     except Exception as e:
         print(f"發生未預期的伺服器錯誤: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"伺服器發生未預期的錯誤: {str(e)}")
