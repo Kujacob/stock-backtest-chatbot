@@ -25,7 +25,7 @@ load_dotenv()
 app = FastAPI(
     title="自然語言股票策略回測 API",
     description="一個能將自然語言交易策略轉換為程式碼並執行回測的 API。",
-    version="10.0.0", # Final Deployment Version
+    version="11.0.0", # The Final Version
 )
 
 # 設定 CORS 中介軟體
@@ -71,52 +71,76 @@ class QuestionResponse(BaseModel):
 def get_llm_prompt(user_strategy: str) -> str:
     """為語言模型建立一個結構化的提示，使其能將自然語言策略轉換為 JSON"""
     return f'''
-You are an expert financial analyst and Python programmer. Your task is to interpret a user's trading strategy and convert it into a structured JSON object. You must support multiple strategy types.
+You are an expert financial analyst and Python programmer. Your task is to interpret a user's trading strategy and convert it into a structured JSON object. You must support a new, highly advanced and flexible strategy type: "COMPLEX_EVENT_TRADE".
 
 **CRITICAL RULE:** If the strategy is ambiguous or uses features beyond what is described, you MUST return a JSON object with a "question" key asking for clarification.
 
 **--- *** TICKER SYMBOL RULE *** ---**
-**Ticker Symbol Rule:** You MUST use the '^' prefix for indices. For example, if the user mentions 'VIX', you must convert it to '^VIX'. If they mention 'Nasdaq 100', convert it to '^NDX'.
+**Ticker Symbol Rule:** You MUST use the '^' prefix for indices. For example, if the user mentions 'VIX', you must convert it to '^VIX'. If they mention 'Nasdaq 100', convert it to '^NDX'. For regular stocks like 'TSMC' or 'QQQ', do not add a prefix.
 
-**--- STRATEGY TYPE 1: ADVANCED_PYRAMID_TRADE ---**
-*Description*: A sophisticated strategy that involves an initial buy, a series of subsequent "pyramiding" buys based on price drops, and a profit-target based sell condition.
-*Example*: "I want to backtest a QQQ trading strategy using the ^NDX as a signal, from 2010 to today. The plan is: when the Nasdaq 100 index price falls below its 365-day moving average, buy an initial 50% position in QQQ. After that, for every 10% drop from the last purchase price, add another 20% of my current equity. Do this until all capital is used. Hold the entire position until the total return on it exceeds 1000%, then sell everything."
-*JSON*:
+**--- STRATEGY TYPE: COMPLEX_EVENT_TRADE ---**
+*Description*: A universal strategy engine that can handle various triggers and actions.
+*Parameters*:
+- `trade_asset`: The asset to be traded (e.g., "QQQ").
+- `indicator_asset`: The asset used for signals (e.g., "^VIX", "^NDX").
+- `buy_trigger`: The condition to initiate the first buy.
+  - `type`: Can be "indicator_cross_below_ma", "indicator_cross_above_ma", "indicator_above_level", "indicator_below_level".
+  - `params`: Contains `ma_period` or `level`.
+- `pyramid_rules`: A list of rules for adding to the position.
+  - `trigger_type`: Can be "price_drop_pct" (from last buy) or "indicator_increase_pct" (from last buy).
+  - `params`: Contains `pct` and `add_size_pct` (of current equity).
+- `sell_trigger`: The condition to sell the entire position.
+  - `type`: Can be "take_profit_pct" or "indicator_cross_below_ma".
+  - `params`: Contains `pct` or `ma_period`.
+
+**Example 1: The user's VIX Spike Strategy**
+*User's Strategy*: "Using TQQQ and VIX from 2019 to 2024. Buy 50% TQQQ when VIX price breaks above 30. Then, for every 20% increase in VIX from the last purchase, add 20% of my current equity. Do this 5 times. Sell all if my total profit exceeds 500%."
+*Your JSON*:
 ```json
 {{
-    "parameters": {{ "tickers": ["QQQ", "^NDX"], "start_date": "2010-01-01", "end_date": "2024-12-31" }},
+    "parameters": {{ "tickers": ["TQQQ", "^VIX"], "start_date": "2019-01-01", "end_date": "2024-12-31" }},
     "strategy_definition": {{
-        "buy_rules": [{{
-            "type": "ADVANCED_PYRAMID_TRADE",
-            "params": {{
-                "trigger_type": "CONTRARIAN_INDICATOR",
-                "indicator_ticker": "^NDX",
-                "ma_period": 365,
-                "initial_size_pct": 50,
-                "pyramid_rules": [ {{ "drop_pct": 10, "add_size_pct": 20 }}, {{ "drop_pct": 10, "add_size_pct": 20 }} ]
-            }}
-        }}],
-        "sell_rules": [{{ "type": "TAKE_PROFIT", "params": {{ "return_pct": 1000 }} }}]
+        "type": "COMPLEX_EVENT_TRADE",
+        "params": {{
+            "trade_asset": "TQQQ",
+            "indicator_asset": "^VIX",
+            "buy_trigger": {{ "type": "indicator_above_level", "params": {{ "level": 30 }} }},
+            "initial_size_pct": 50,
+            "pyramid_rules": [
+                {{ "trigger_type": "indicator_increase_pct", "params": {{ "pct": 20, "add_size_pct": 20 }} }},
+                {{ "trigger_type": "indicator_increase_pct", "params": {{ "pct": 20, "add_size_pct": 20 }} }},
+                {{ "trigger_type": "indicator_increase_pct", "params": {{ "pct": 20, "add_size_pct": 20 }} }},
+                {{ "trigger_type": "indicator_increase_pct", "params": {{ "pct": 20, "add_size_pct": 20 }} }},
+                {{ "trigger_type": "indicator_increase_pct", "params": {{ "pct": 20, "add_size_pct": 20 }} }}
+            ],
+            "sell_trigger": {{ "type": "take_profit_pct", "params": {{ "pct": 500 }} }}
+        }}
     }}
 }}
 ```
 
-**--- STRATEGY TYPE 2: DCA_AND_HOLD (Dollar-Cost Averaging) ---**
-*Description*: A strategy that invests a fixed amount of money at regular intervals, regardless of price.
-*Example*: "Backtest a Dollar-Cost Averaging strategy for QQQ from 1999 to 2024. Invest $300 every 30 days and never sell."
-*JSON*:
+**Example 2: The user's MA Crossover Strategy**
+*User's Strategy*: "Use ^NDX to trade QQQ from 1999. Buy 50% QQQ when ^NDX falls below its 365-day MA. Then for every 10% drop in QQQ price, add 10% of my equity. Do this 5 times. Sell when total profit is over 1000%."
+*Your JSON*:
 ```json
 {{
-    "parameters": {{ "tickers": ["QQQ"], "start_date": "1999-01-01", "end_date": "2024-12-31" }},
+    "parameters": {{ "tickers": ["QQQ", "^NDX"], "start_date": "1999-02-11", "end_date": "2024-12-31" }},
     "strategy_definition": {{
-        "buy_rules": [{{
-            "type": "DCA_AND_HOLD",
-            "params": {{
-                "investment_interval_days": 30,
-                "investment_amount_usd": 300
-            }}
-        }}],
-        "sell_rules": []
+        "type": "COMPLEX_EVENT_TRADE",
+        "params": {{
+            "trade_asset": "QQQ",
+            "indicator_asset": "^NDX",
+            "buy_trigger": {{ "type": "indicator_cross_below_ma", "params": {{ "ma_period": 365 }} }},
+            "initial_size_pct": 50,
+            "pyramid_rules": [
+                {{ "trigger_type": "price_drop_pct", "params": {{ "pct": 10, "add_size_pct": 10 }} }},
+                {{ "trigger_type": "price_drop_pct", "params": {{ "pct": 10, "add_size_pct": 10 }} }},
+                {{ "trigger_type": "price_drop_pct", "params": {{ "pct": 10, "add_size_pct": 10 }} }},
+                {{ "trigger_type": "price_drop_pct", "params": {{ "pct": 10, "add_size_pct": 10 }} }},
+                {{ "trigger_type": "price_drop_pct", "params": {{ "pct": 10, "add_size_pct": 10 }} }}
+            ],
+            "sell_trigger": {{ "type": "take_profit_pct", "params": {{ "pct": 1000 }} }}
+        }}
     }}
 }}
 ```
@@ -148,7 +172,7 @@ def fetch_and_prepare_data(tickers: list[str], start_date: str, end_date: str) -
     print(f"正在下載 {tickers} 從 {start_date} 到 {end_date} 的資料...")
     try:
         all_data = yf.download(tickers, start=start_date, end=end_date, progress=False, auto_adjust=True)
-        if all_data.empty or all_data['Close'].isnull().all().all():
+        if all_data.empty or ('Close' in all_data and all_data['Close'].isnull().all().all()):
              raise ValueError(f"找不到股票代碼 {tickers} 在指定日期範圍內的有效資料。")
 
         primary_ticker = tickers[0]
@@ -176,104 +200,100 @@ def fetch_and_prepare_data(tickers: list[str], start_date: str, end_date: str) -
 
 def generate_strategy_code(strategy_definition: dict) -> str:
     """根據結構化的策略定義，動態產生 backtesting.py 的 Strategy 類別程式碼"""
-    buy_rules = strategy_definition.get('buy_rules', [])
-    sell_rules = strategy_definition.get('sell_rules', [])
-    strategy_type = buy_rules[0]['type'] if buy_rules else None
-
+    params = strategy_definition.get('params', {})
+    
     init_code_lines = [
         "        # --- 初始化所有策略所需的變數 ---",
         "        self.last_buy_price = 0",
+        "        self.last_buy_indicator_level = 0",
         "        self.pyramid_count = 0",
         "        self.unrealized_pl = 0.0",
-        "        # DCA 策略專用變數",
-        "        self.last_investment_date = -1",
-        "        self.investment_interval = 0",
-        "        self.investment_amount = 0",
     ]
     
-    # 動態加入指標計算與參數設定
-    if buy_rules:
-        buy_rule_params = buy_rules[0]['params']
-        if buy_rules[0]['type'] == 'ADVANCED_PYRAMID_TRADE':
-            if buy_rule_params.get('trigger_type') == 'CONTRARIAN_INDICATOR':
-                ma_period = buy_rule_params['ma_period']
-                indicator_ticker_clean = buy_rule_params['indicator_ticker'].replace('^', '').replace('=F', '')
-                indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
-                sma_name = f"self.sma_{indicator_ticker_clean}"
-                init_code_lines.append(f"        {sma_name} = self.I(SMA, {indicator_data_series}, {ma_period})")
-        elif buy_rules[0]['type'] == 'DCA_AND_HOLD':
-            init_code_lines.append(f"        self.investment_interval = {buy_rule_params['investment_interval_days']}")
-            init_code_lines.append(f"        self.investment_amount = {buy_rule_params['investment_amount_usd']}")
+    # 動態加入指標計算
+    buy_trigger = params.get('buy_trigger', {})
+    if 'ma_period' in buy_trigger.get('params', {}):
+        ma_period = buy_trigger['params']['ma_period']
+        indicator_ticker_clean = params['indicator_asset'].replace('^', '').replace('=F', '')
+        indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
+        sma_name = f"self.sma_{indicator_ticker_clean}"
+        init_code_lines.append(f"        {sma_name} = self.I(SMA, {indicator_data_series}, {ma_period})")
 
-    # 初始化所有邏輯列表
     buy_logic_lines = []
     pyramid_logic = []
     sell_logic_lines = []
 
-    # 產生買入邏輯
-    if strategy_type == 'ADVANCED_PYRAMID_TRADE':
-        params = buy_rules[0]['params']
-        pyramid_rules = params.get('pyramid_rules', [])
+    # --- 買入邏輯產生 ---
+    if buy_trigger:
+        initial_size_pct = params.get('initial_size_pct', 50)
+        indicator_asset_clean = params['indicator_asset'].replace('^', '').replace('=F', '')
+        indicator_series = f"self.data.Close_{indicator_asset_clean}"
         
-        indicator_ticker_clean = params['indicator_ticker'].replace('^', '').replace('=F', '')
-        indicator_data_series = f"self.data.Close_{indicator_ticker_clean}"
-        sma_name = f"self.sma_{indicator_ticker_clean}"
-        initial_size_pct = params['initial_size_pct']
+        condition = "False"
+        if buy_trigger['type'] == 'indicator_cross_below_ma':
+            sma_name = f"self.sma_{indicator_asset_clean}"
+            condition = f"crossover({sma_name}, {indicator_series})"
+        elif buy_trigger['type'] == 'indicator_above_level':
+            level = buy_trigger['params']['level']
+            condition = f"{indicator_series}[-1] > {level}"
         
         buy_logic_lines.extend([
-            f"if crossover({sma_name}, {indicator_data_series}):",
+            f"if {condition}:",
             f"    trade_value = self.equity * {initial_size_pct} / 100",
             f"    size = int(trade_value / self.data.Close[-1])",
             f"    if size > 0:",
             f"        self.buy(size=size)",
             f"        self.last_buy_price = self.data.Close[-1]",
+            f"        self.last_buy_indicator_level = {indicator_series}[-1]",
         ])
 
+    # --- 加碼邏輯產生 ---
+    pyramid_rules = params.get('pyramid_rules', [])
+    if pyramid_rules:
+        indicator_asset_clean = params['indicator_asset'].replace('^', '').replace('=F', '')
+        indicator_series = f"self.data.Close_{indicator_asset_clean}"
         pyramid_logic.extend([
             f"if self.pyramid_count < {len(pyramid_rules)}:",
             f"    pyramid_rule = {json.dumps(pyramid_rules)}[self.pyramid_count]",
-            f"    if self.data.Close[-1] < self.last_buy_price * (1 - pyramid_rule['drop_pct'] / 100):",
-            f"        add_trade_value = self.equity * pyramid_rule['add_size_pct'] / 100",
+            f"    trigger_type = pyramid_rule['trigger_type']",
+            f"    params = pyramid_rule['params']",
+            f"    should_pyramid = False",
+            f"    if trigger_type == 'price_drop_pct':",
+            f"        if self.data.Close[-1] < self.last_buy_price * (1 - params['pct'] / 100):",
+            f"            should_pyramid = True",
+            f"    elif trigger_type == 'indicator_increase_pct':",
+            f"        if {indicator_series}[-1] > self.last_buy_indicator_level * (1 + params['pct'] / 100):",
+            f"            should_pyramid = True",
+            f"    if should_pyramid:",
+            f"        add_trade_value = self.equity * params['add_size_pct'] / 100",
             f"        add_size = int(add_trade_value / self.data.Close[-1])",
             f"        if add_size > 0 and self.equity >= self.data.Close[-1] * add_size:",
             f"            self.buy(size=add_size)",
             f"            self.last_buy_price = self.data.Close[-1]",
+            f"            self.last_buy_indicator_level = {indicator_series}[-1]",
             f"            self.pyramid_count += 1",
         ])
-    elif strategy_type == 'DCA_AND_HOLD':
-        buy_logic_lines.extend([
-            "if self.last_investment_date == -1 or (len(self.data) - 1 - self.last_investment_date) >= self.investment_interval:",
-            "    size = int(self.investment_amount / self.data.Close[-1])",
-            "    if self.equity >= self.investment_amount and size > 0:",
-            "        self.buy(size=size)",
-            "        self.last_investment_date = len(self.data) - 1",
-        ])
 
-    if not buy_logic_lines:
-        buy_logic_lines.append("pass")
-
-    # 產生賣出邏輯
-    if sell_rules:
-        if sell_rules[0]['type'] == 'TAKE_PROFIT':
-            params = sell_rules[0]['params']
-            return_pct = params['return_pct']
+    # --- 賣出邏輯產生 ---
+    sell_trigger = params.get('sell_trigger', {})
+    if sell_trigger:
+        if sell_trigger['type'] == 'take_profit_pct':
+            pct = sell_trigger['params']['pct']
             sell_logic_lines.extend([
-                f"if self.position.pl_pct * 100 > {return_pct}:",
+                f"if self.position.pl_pct * 100 > {pct}:",
                 f"    self.position.close()",
                 f"    self.pyramid_count = 0",
                 f"    self.last_buy_price = 0",
+                f"    self.last_buy_indicator_level = 0",
             ])
-    
-    if not sell_logic_lines:
-        sell_logic_lines.append("pass")
 
-    # 組合完整的 next 方法
+    # --- 組合最終的 next 方法 ---
     next_code_lines = [
         "        if not self.position:",
-        *[f"            {line}" for line in buy_logic_lines],
+        *[f"            {line}" for line in buy_logic_lines if buy_logic_lines],
         "        else:",
-        *[f"            {line}" for line in pyramid_logic],
-        *[f"            {line}" for line in sell_logic_lines],
+        *[f"            {line}" for line in pyramid_logic if pyramid_logic],
+        *[f"            {line}" for line in sell_logic_lines if sell_logic_lines],
         "",
         "        if self.data.index[-1] == self.data.index.values[-1] and self.position:",
         "            self.unrealized_pl = self.position.pl_pct * 100",
@@ -354,9 +374,10 @@ async def perform_backtest(request: StrategyRequest):
                 content={"question": response_data['question']}
             )
 
-        params = response_data['parameters']
-        strategy_definition = response_data['strategy_definition']
-
+        # 由於我們只有一種策略定義，直接取用
+        strategy_definition = response_data.get('strategy_definition', {})
+        params = response_data.get('parameters', {})
+        
         data = fetch_and_prepare_data(params['tickers'], params['start_date'], params['end_date'])
         strategy_code = generate_strategy_code(strategy_definition)
         stats = run_backtest(data, strategy_code)
